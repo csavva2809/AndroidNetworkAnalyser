@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "112925257474",
+    "project_id": "networkanalyser-eb95f",
+    "storage_bucket": "networkanalyser-eb95f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:112925257474:android:87c5d1013e7ea59e821c1b",
+        "android_client_info": {
+          "package_name": "com.example.networkanalyser"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA79mOVX1bo9hX-0M-aD7_ieJ2SZ7WEwcI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
