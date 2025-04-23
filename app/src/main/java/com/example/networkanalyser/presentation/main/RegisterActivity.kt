@@ -68,7 +68,7 @@ class RegisterActivity : AppCompatActivity() {
                             .addOnFailureListener {
                                 Toast.makeText(this, "Failed to save profile: ${it.message}", Toast.LENGTH_LONG).show()
                             }
-                } else {
+                    } else {
                         Toast.makeText(this, "Error: ${it.exception?.message}", Toast.LENGTH_LONG).show()
                     }
                 }
