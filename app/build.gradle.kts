@@ -5,6 +5,10 @@ plugins {
 
     //Firebase
     id("com.google.gms.google-services")
+
+    //Room SQLlite
+    id("kotlin-kapt")
+
 }
 
 android {
@@ -62,15 +66,16 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-
-
     implementation("androidx.appcompat:appcompat:1.6.1")
 
     //Firebase
     implementation("com.google.firebase:firebase-auth:22.1.1")
     implementation("com.google.firebase:firebase-firestore-ktx:24.10.1")
 
-
+    // Room SQLlite
+    implementation("androidx.room:room-runtime:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
 }
 
 apply(plugin = "com.google.gms.google-services")
