@@ -1,20 +1,35 @@
 package com.example.networkanalyser.presentation.main
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.TrafficStats
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.example.networkanalyser.ui.theme.NetworkAnalyserTheme
+import com.example.networkanalyser.utils.AppConfig
+import com.example.networkanalyser.data.local.DatabaseProvider
+import com.example.networkanalyser.data.model.NetworkLog
+import com.example.networkanalyser.utils.AnomalyDetector
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,9 +50,81 @@ fun DashboardScreen() {
     val context = LocalContext.current
     var connectionInfo by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var isScanning by remember { mutableStateOf(false) }
+
+    val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
+    var previousLog by remember { mutableStateOf<NetworkLog?>(null) }
+    val logs by dao.getAllLogs().collectAsState(initial = emptyList())
 
     LaunchedEffect(Unit) {
         connectionInfo = getNetworkStatus(context)
+    }
+
+    LaunchedEffect(isScanning) {
+        while (isScanning) {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val scanResult: ScanResult? = try {
+                if (hasPermission) {
+                    wm.scanResults.find { it.BSSID == wm.connectionInfo.bssid }
+                } else null
+            } catch (e: SecurityException) {
+                null
+            }
+
+            val network = cm.activeNetwork
+            val capabilities = cm.getNetworkCapabilities(network)
+
+            val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            val isMobile = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+            val rssi = if (isWifi) wm.connectionInfo.rssi else -100
+            val tx = TrafficStats.getTotalTxBytes() / (1024 * 1024)
+            val rx = TrafficStats.getTotalRxBytes() / (1024 * 1024)
+
+            val connectionType = if (isWifi) {
+                if (scanResult?.capabilities?.contains("WPA") != true) "Unsecured WiFi" else "WiFi"
+            } else if (isMobile) {
+                "Mobile"
+            } else {
+                "None"
+            }
+
+            val currentLog = NetworkLog(
+                timestamp = System.currentTimeMillis(),
+                connectionType = connectionType,
+                signalStrength = rssi,
+                dataSentMB = tx,
+                dataReceivedMB = rx
+            )
+
+            val result = AnomalyDetector.detect(currentLog, previousLog)
+            val finalLog = currentLog.copy(isAnomaly = result.isAnomaly)
+
+            dao.insertLog(finalLog)
+
+            if (result.isAnomaly && AppConfig.uploadAnomaliesToFirebase) {
+                FirebaseFirestore.getInstance()
+                    .collection("anomalies")
+                    .add(
+                        mapOf(
+                            "timestamp" to finalLog.timestamp,
+                            "connectionType" to finalLog.connectionType,
+                            "signalStrength" to finalLog.signalStrength,
+                            "dataSentMB" to finalLog.dataSentMB,
+                            "dataReceivedMB" to finalLog.dataReceivedMB,
+                            "anomalyTypes" to result.types.map { it.name }
+                        )
+                    )
+            }
+
+            previousLog = finalLog
+            delay(AppConfig.logIntervalSec * 1000L)
+        }
     }
 
     Scaffold(
@@ -66,12 +153,49 @@ fun DashboardScreen() {
                     Text("Refresh Info")
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (isScanning) {
+                    Button(onClick = { isScanning = false }) {
+                        Text("🛑 Stop Scan")
+                    }
+                } else {
+                    Button(onClick = { isScanning = true }) {
+                        Text("▶ Start Scan")
+                    }
+                }
+
                 Divider()
 
                 Text(text = "\uD83D\uDD27 Coming Next:", style = MaterialTheme.typography.titleMedium)
                 Text("• Threat Detection")
                 Text("• Traffic Logging & Graphs")
                 Text("• Nearby Device Alerts")
+
+                Divider()
+
+                Text(text = "\uD83D\uDCCB Logs:", style = MaterialTheme.typography.titleMedium)
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(logs.take(10)) { log ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Time: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(log.timestamp))}")
+                                Text("Type: ${log.connectionType}")
+                                Text("Signal: ${log.signalStrength} dBm")
+                                Text("Sent: ${log.dataSentMB} MB, Received: ${log.dataReceivedMB} MB")
+                                if (log.isAnomaly) {
+                                    Text("⚠️ Anomaly Detected", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
