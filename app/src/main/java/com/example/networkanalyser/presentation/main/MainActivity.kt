@@ -1,3 +1,5 @@
+// Updated MainActivity.kt with improved secured network detection and connection type legend
+
 package com.example.networkanalyser.presentation.main
 
 import android.Manifest
@@ -19,14 +21,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.networkanalyser.ui.theme.NetworkAnalyserTheme
 import com.example.networkanalyser.utils.AppConfig
 import com.example.networkanalyser.data.local.DatabaseProvider
 import com.example.networkanalyser.data.model.NetworkLog
 import com.example.networkanalyser.utils.AnomalyDetector
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.networkanalyser.data.util.uploadAnomalyToFirebase
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,6 +56,8 @@ fun DashboardScreen() {
     val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
     var previousLog by remember { mutableStateOf<NetworkLog?>(null) }
     val logs by dao.getAllLogs().collectAsState(initial = emptyList())
+
+    var showLegend by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         connectionInfo = getNetworkStatus(context)
@@ -86,8 +89,15 @@ fun DashboardScreen() {
             val tx = TrafficStats.getTotalTxBytes() / (1024 * 1024)
             val rx = TrafficStats.getTotalRxBytes() / (1024 * 1024)
 
+            val capabilitiesString = scanResult?.capabilities.orEmpty()
+            val isSecure = capabilitiesString.contains("WPA") ||
+                    capabilitiesString.contains("WPA2") ||
+                    capabilitiesString.contains("WPA3") ||
+                    capabilitiesString.contains("RSN") ||
+                    capabilitiesString.contains("EAP")
+
             val connectionType = if (isWifi) {
-                if (scanResult?.capabilities?.contains("WPA") != true) "Unsecured WiFi" else "WiFi"
+                if (isSecure) "WiFi" else "Unsecured WiFi"
             } else if (isMobile) {
                 "Mobile"
             } else {
@@ -108,18 +118,7 @@ fun DashboardScreen() {
             dao.insertLog(finalLog)
 
             if (result.isAnomaly && AppConfig.uploadAnomaliesToFirebase) {
-                FirebaseFirestore.getInstance()
-                    .collection("anomalies")
-                    .add(
-                        mapOf(
-                            "timestamp" to finalLog.timestamp,
-                            "connectionType" to finalLog.connectionType,
-                            "signalStrength" to finalLog.signalStrength,
-                            "dataSentMB" to finalLog.dataSentMB,
-                            "dataReceivedMB" to finalLog.dataReceivedMB,
-                            "anomalyTypes" to result.types.map { it.name }
-                        )
-                    )
+                uploadAnomalyToFirebase(context, finalLog, result)
             }
 
             previousLog = finalLog
@@ -129,7 +128,14 @@ fun DashboardScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("\uD83D\uDCE1 Network Analyser") })
+            TopAppBar(
+                title = { Text("\uD83D\uDCE1 Network Analyser") },
+                actions = {
+                    IconButton(onClick = { showLegend = true }) {
+                        Text("ℹ️")
+                    }
+                }
+            )
         }
     ) { paddingValues ->
         Column(
@@ -198,6 +204,23 @@ fun DashboardScreen() {
                 }
             }
         }
+    }
+
+    if (showLegend) {
+        AlertDialog(
+            onDismissRequest = { showLegend = false },
+            title = { Text("Connection Type Legend") },
+            text = {
+                Text("\u2022 WiFi: Secure WiFi connection (WPA/WPA2/WPA3/Enterprise)\n\n" +
+                        "\u2022 Unsecured WiFi: Open, WEP, or poorly configured WiFi\n\n" +
+                        "\u2022 Mobile: Mobile data connection (4G/5G)")
+            },
+            confirmButton = {
+                Button(onClick = { showLegend = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
