@@ -32,6 +32,10 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+import com.patrykandpatrick.vico.compose.chart.Chart
+import com.patrykandpatrick.vico.compose.chart.line.lineChart
+import com.patrykandpatrick.vico.core.entry.entryModelOf
+
 sealed class Screen {
     object Dashboard : Screen()
     object Graphs : Screen()
@@ -255,23 +259,42 @@ fun DashboardScreen() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GraphsScreen() {
+    val context = LocalContext.current
+    val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
+    val logs = dao.getAllLogs().collectAsState(initial = emptyList())
+
+    val entries = logs.value.takeLast(30)
+        .mapIndexed { index, log -> index.toFloat() to log.signalStrength.toFloat() }
+        .flatMap { listOf(it.first, it.second) }
+
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("\uD83D\uDCCA Graphs") })
+            TopAppBar(title = { Text("\uD83D\uDCCA Signal Strength Graph") })
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
                 .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                .fillMaxSize()
         ) {
-            Text("Graphs will be displayed here.", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Signal Strength (dBm)", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            if (entries.isNotEmpty()) {
+                Chart(
+                    chart = lineChart(),
+                    model = entryModelOf(*entries.toTypedArray()),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                )
+            } else {
+                Text("No data yet.")
+            }
         }
     }
 }
+
 
 fun getNetworkStatus(context: Context): String {
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
