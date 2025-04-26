@@ -36,6 +36,12 @@ import com.patrykandpatrick.vico.compose.chart.Chart
 import com.patrykandpatrick.vico.compose.chart.line.lineChart
 import com.patrykandpatrick.vico.core.entry.entryModelOf
 
+
+
+
+
+
+
 sealed class Screen {
     object Dashboard : Screen()
     object Graphs : Screen()
@@ -268,9 +274,7 @@ fun GraphsScreen() {
         .flatMap { listOf(it.first, it.second) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("\uD83D\uDCCA Signal Strength Graph") })
-        }
+        topBar = { TopAppBar(title = { Text("\uD83D\uDCCA Signal Strength Graph") }) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -278,12 +282,12 @@ fun GraphsScreen() {
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
-            Text(text = "Signal Strength (dBm)", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(16.dp))
+            Text("Signal Strength (dBm)")
+            Spacer(Modifier.height(16.dp))
             if (entries.isNotEmpty()) {
                 Chart(
                     chart = lineChart(),
-                    model = entryModelOf(*entries.toTypedArray()),
+                    model = entryModelOf(*entries.toTypedArray()),  // 👈 basic entryModelOf
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
