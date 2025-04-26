@@ -1,4 +1,4 @@
-// Updated MainActivity.kt with improved secured network detection and connection type legend
+// Updated MainActivity.kt with Navigation Drawer, screen switching, and Connection Type Legend popup
 
 package com.example.networkanalyser.presentation.main
 
@@ -32,15 +32,51 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+sealed class Screen {
+    object Dashboard : Screen()
+    object Graphs : Screen()
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             NetworkAnalyserTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    DashboardScreen()
-                }
+                AppNavigator()
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppNavigator() {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var selectedScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Text("Menu", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+                Divider()
+                NavigationDrawerItem(
+                    label = { Text("Dashboard") },
+                    selected = selectedScreen == Screen.Dashboard,
+                    onClick = { selectedScreen = Screen.Dashboard }
+                )
+                NavigationDrawerItem(
+                    label = { Text("Graphs") },
+                    selected = selectedScreen == Screen.Graphs,
+                    onClick = { selectedScreen = Screen.Graphs }
+                )
+            }
+        }
+    ) {
+        when (selectedScreen) {
+            is Screen.Dashboard -> DashboardScreen()
+            is Screen.Graphs -> GraphsScreen()
         }
     }
 }
@@ -52,12 +88,11 @@ fun DashboardScreen() {
     var connectionInfo by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(false) }
+    var showLegend by remember { mutableStateOf(false) }
 
     val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
     var previousLog by remember { mutableStateOf<NetworkLog?>(null) }
     val logs by dao.getAllLogs().collectAsState(initial = emptyList())
-
-    var showLegend by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         connectionInfo = getNetworkStatus(context)
@@ -173,13 +208,6 @@ fun DashboardScreen() {
 
                 Divider()
 
-                Text(text = "\uD83D\uDD27 Coming Next:", style = MaterialTheme.typography.titleMedium)
-                Text("• Threat Detection")
-                Text("• Traffic Logging & Graphs")
-                Text("• Nearby Device Alerts")
-
-                Divider()
-
                 Text(text = "\uD83D\uDCCB Logs:", style = MaterialTheme.typography.titleMedium)
 
                 LazyColumn(
@@ -211,9 +239,9 @@ fun DashboardScreen() {
             onDismissRequest = { showLegend = false },
             title = { Text("Connection Type Legend") },
             text = {
-                Text("\u2022 WiFi: Secure WiFi connection (WPA/WPA2/WPA3/Enterprise)\n\n" +
-                        "\u2022 Unsecured WiFi: Open, WEP, or poorly configured WiFi\n\n" +
-                        "\u2022 Mobile: Mobile data connection (4G/5G)")
+                Text("\u2022 WiFi: Secure WiFi (WPA/WPA2/WPA3/EAP)\n" +
+                        "\u2022 Unsecured WiFi: Open or WEP networks\n" +
+                        "\u2022 Mobile: 4G/5G cellular networks")
             },
             confirmButton = {
                 Button(onClick = { showLegend = false }) {
@@ -221,6 +249,27 @@ fun DashboardScreen() {
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GraphsScreen() {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("\uD83D\uDCCA Graphs") })
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+        ) {
+            Text("Graphs will be displayed here.", style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 
