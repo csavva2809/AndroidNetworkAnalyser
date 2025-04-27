@@ -1,5 +1,3 @@
-// Updated MainActivity.kt with Navigation Drawer, screen switching, and Connection Type Legend popup
-
 package com.example.networkanalyser.presentation.main
 
 import android.Manifest
@@ -8,7 +6,6 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.TrafficStats
-import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -17,6 +14,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -32,15 +31,7 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
-import com.patrykandpatrick.vico.compose.chart.Chart
-import com.patrykandpatrick.vico.compose.chart.line.lineChart
-import com.patrykandpatrick.vico.core.entry.entryModelOf
-
-
-
-
-
-
+import com.example.networkanalyser.presentation.graphs.*
 
 sealed class Screen {
     object Dashboard : Screen()
@@ -62,7 +53,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigator() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
     var selectedScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
 
     ModalNavigationDrawer(
@@ -71,16 +61,8 @@ fun AppNavigator() {
             ModalDrawerSheet {
                 Text("Menu", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
                 Divider()
-                NavigationDrawerItem(
-                    label = { Text("Dashboard") },
-                    selected = selectedScreen == Screen.Dashboard,
-                    onClick = { selectedScreen = Screen.Dashboard }
-                )
-                NavigationDrawerItem(
-                    label = { Text("Graphs") },
-                    selected = selectedScreen == Screen.Graphs,
-                    onClick = { selectedScreen = Screen.Graphs }
-                )
+                NavigationDrawerItem(label = { Text("Dashboard") }, selected = selectedScreen == Screen.Dashboard, onClick = { selectedScreen = Screen.Dashboard })
+                NavigationDrawerItem(label = { Text("Graphs") }, selected = selectedScreen == Screen.Graphs, onClick = { selectedScreen = Screen.Graphs })
             }
         }
     ) {
@@ -112,19 +94,8 @@ fun DashboardScreen() {
         while (isScanning) {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-
-            val hasPermission = ContextCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-
-            val scanResult: ScanResult? = try {
-                if (hasPermission) {
-                    wm.scanResults.find { it.BSSID == wm.connectionInfo.bssid }
-                } else null
-            } catch (e: SecurityException) {
-                null
-            }
-
+            val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val scanResult = if (hasPermission) wm.scanResults.find { it.BSSID == wm.connectionInfo.bssid } else null
             val network = cm.activeNetwork
             val capabilities = cm.getNetworkCapabilities(network)
 
@@ -135,18 +106,13 @@ fun DashboardScreen() {
             val rx = TrafficStats.getTotalRxBytes() / (1024 * 1024)
 
             val capabilitiesString = scanResult?.capabilities.orEmpty()
-            val isSecure = capabilitiesString.contains("WPA") ||
-                    capabilitiesString.contains("WPA2") ||
-                    capabilitiesString.contains("WPA3") ||
-                    capabilitiesString.contains("RSN") ||
-                    capabilitiesString.contains("EAP")
+            val isSecure = capabilitiesString.contains("WPA") || capabilitiesString.contains("RSN") || capabilitiesString.contains("EAP")
 
-            val connectionType = if (isWifi) {
-                if (isSecure) "WiFi" else "Unsecured WiFi"
-            } else if (isMobile) {
-                "Mobile"
-            } else {
-                "None"
+            val connectionType = when {
+                isWifi && !isSecure -> "Unsecured WiFi"
+                isWifi -> "WiFi"
+                isMobile -> "Mobile"
+                else -> "None"
             }
 
             val currentLog = NetworkLog(
@@ -156,7 +122,6 @@ fun DashboardScreen() {
                 dataSentMB = tx,
                 dataReceivedMB = rx
             )
-
             val result = AnomalyDetector.detect(currentLog, previousLog)
             val finalLog = currentLog.copy(isAnomaly = result.isAnomaly)
 
@@ -173,29 +138,22 @@ fun DashboardScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("\uD83D\uDCE1 Network Analyser") },
-                actions = {
-                    IconButton(onClick = { showLegend = true }) {
-                        Text("ℹ️")
-                    }
+            TopAppBar(title = { Text("\uD83D\uDCE1 Network Analyser") }, actions = {
+                IconButton(onClick = { showLegend = true }) {
+                    Text("ℹ️")
                 }
-            )
+            })
         }
-    ) { paddingValues ->
+    ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .padding(16.dp)
-                .fillMaxSize(),
+            modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (isLoading) {
                 CircularProgressIndicator()
             } else {
-                Text(text = "Current Network Status:", style = MaterialTheme.typography.titleMedium)
-                Text(text = connectionInfo)
-
+                Text("Current Network Status:", style = MaterialTheme.typography.titleMedium)
+                Text(connectionInfo)
                 Button(onClick = {
                     isLoading = true
                     connectionInfo = getNetworkStatus(context)
@@ -203,31 +161,20 @@ fun DashboardScreen() {
                 }) {
                     Text("Refresh Info")
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
+                Spacer(Modifier.height(16.dp))
                 if (isScanning) {
-                    Button(onClick = { isScanning = false }) {
-                        Text("🛑 Stop Scan")
-                    }
+                    Button(onClick = { isScanning = false }) { Text("🛑 Stop Scan") }
                 } else {
-                    Button(onClick = { isScanning = true }) {
-                        Text("▶ Start Scan")
-                    }
+                    Button(onClick = { isScanning = true }) { Text("▶ Start Scan") }
                 }
-
                 Divider()
-
-                Text(text = "\uD83D\uDCCB Logs:", style = MaterialTheme.typography.titleMedium)
-
+                Text("📋 Logs:", style = MaterialTheme.typography.titleMedium)
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(logs.take(10)) { log ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                    items(logs.takeLast(10)) { log ->
+                        Card {
                             Column(modifier = Modifier.padding(8.dp)) {
                                 Text("Time: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(log.timestamp))}")
                                 Text("Type: ${log.connectionType}")
@@ -249,14 +196,14 @@ fun DashboardScreen() {
             onDismissRequest = { showLegend = false },
             title = { Text("Connection Type Legend") },
             text = {
-                Text("\u2022 WiFi: Secure WiFi (WPA/WPA2/WPA3/EAP)\n" +
-                        "\u2022 Unsecured WiFi: Open or WEP networks\n" +
-                        "\u2022 Mobile: 4G/5G cellular networks")
+                Text(
+                    "• WiFi: Secure WiFi (WPA/WPA2/WPA3/EAP)\n" +
+                            "• Unsecured WiFi: Open or WEP networks\n" +
+                            "• Mobile: 4G/5G cellular networks"
+                )
             },
             confirmButton = {
-                Button(onClick = { showLegend = false }) {
-                    Text("OK")
-                }
+                Button(onClick = { showLegend = false }) { Text("OK") }
             }
         )
     }
@@ -267,14 +214,16 @@ fun DashboardScreen() {
 fun GraphsScreen() {
     val context = LocalContext.current
     val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
-    val logs = dao.getAllLogs().collectAsState(initial = emptyList())
+    val logs by dao.getAllLogs().collectAsState(initial = emptyList())
 
-    val entries = logs.value.takeLast(30)
-        .mapIndexed { index, log -> index.toFloat() to log.signalStrength.toFloat() }
-        .flatMap { listOf(it.first, it.second) }
+    var expanded by remember { mutableStateOf(false) }
+    var selectedGraph by remember { mutableStateOf("Signal Strength") }
+    val graphOptions = listOf("Signal Strength", "Data Sent & Received", "Anomaly Highlight")
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("\uD83D\uDCCA Signal Strength Graph") }) }
+        topBar = {
+            TopAppBar(title = { Text("\uD83D\uDCCA Graphs") })
+        }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -282,33 +231,54 @@ fun GraphsScreen() {
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
-            Text("Signal Strength (dBm)")
-            Spacer(Modifier.height(16.dp))
-            if (entries.isNotEmpty()) {
-                Chart(
-                    chart = lineChart(),
-                    model = entryModelOf(*entries.toTypedArray()),  // 👈 basic entryModelOf
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
+            // Dropdown
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded }
+            ) {
+                TextField(
+                    readOnly = true,
+                    value = selectedGraph,
+                    onValueChange = {},
+                    label = { Text("Select Graph") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                    modifier = Modifier.menuAnchor()
                 )
-            } else {
-                Text("No data yet.")
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    graphOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                selectedGraph = option
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            when (selectedGraph) {
+                "Signal Strength" -> SignalStrengthGraphMP(logs)
+                "Data Sent & Received" -> DataSentReceivedGraphMP(logs)
+                "Anomaly Highlight" -> AnomalyHighlightGraphMP(logs)
             }
         }
     }
 }
 
-
 fun getNetworkStatus(context: Context): String {
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-
     val network = cm.activeNetwork
     val capabilities = cm.getNetworkCapabilities(network)
+
     val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     val isMobile = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
-
     val rssi = if (isWifi) "${wm.connectionInfo.rssi} dBm" else "N/A"
     val tx = TrafficStats.getTotalTxBytes() / (1024 * 1024)
     val rx = TrafficStats.getTotalRxBytes() / (1024 * 1024)
@@ -320,3 +290,4 @@ fun getNetworkStatus(context: Context): String {
         appendLine("Data Received: $rx MB")
     }
 }
+

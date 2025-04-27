@@ -48,6 +48,7 @@ android {
 
 }
 
+
 dependencies {
 
     implementation(libs.androidx.core.ktx)
@@ -77,12 +78,8 @@ dependencies {
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
 
-    // Vico Graph Libraries
-    // build.gradle.kts
-
-    implementation("com.patrykandpatrick.vico:compose:1.6.6")  // 👈 NOT compose-m3, NOT 2.0.0
-
-
+    // MPAndroidChart
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
 
 }
