@@ -34,10 +34,11 @@ import java.util.*
 import com.example.networkanalyser.presentation.graphs.*
 import com.example.networkanalyser.utils.NotificationHelper
 import com.example.networkanalyser.data.local.*
-
 import android.app.Activity
 import android.os.Build
 import androidx.core.app.ActivityCompat
+import com.example.networkanalyser.utils.PermissionHelper
+import com.example.networkanalyser.utils.NearbyAlertManager
 
 sealed class Screen {
     object Dashboard : Screen()
@@ -70,6 +71,10 @@ fun RequestNotificationPermissionIfNeeded() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (!PermissionHelper.hasAllPermissions(this)) {
+            PermissionHelper.requestAllPermissions(this)
+        }
         NotificationHelper.createNotificationChannel(this)
 
         setContent {
@@ -104,6 +109,7 @@ fun AppNavigator() {
         }
     }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen() {
@@ -118,6 +124,14 @@ fun DashboardScreen() {
 
     var showLegend by remember { mutableStateOf(false) }
 
+    var alertNearby by remember { mutableStateOf(false) }
+
+
+    LaunchedEffect(alertNearby) {
+        if (alertNearby) {
+            NearbyAlertManager.initialize(context)
+        }
+    }
     LaunchedEffect(Unit) {
         connectionInfo = getNetworkStatus(context)
     }
@@ -235,13 +249,11 @@ fun DashboardScreen() {
                     }
                 }
 
-                Divider()
-
-                Text(text = "\uD83D\uDD27 Coming Next:", style = MaterialTheme.typography.titleMedium)
-                Text("• Threat Detection")
-                Text("• Traffic Logging & Graphs")
-                Text("• Nearby Device Alerts")
-
+                Button(onClick = {
+                    NearbyAlertManager.initialize(context)
+                }) {
+                    Text("\uD83D\uDEA8 Alert Nearby Devices")
+                }
                 Divider()
 
                 Text(text = "\uD83D\uDCCB Logs:", style = MaterialTheme.typography.titleMedium)
