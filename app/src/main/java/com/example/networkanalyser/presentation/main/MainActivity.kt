@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.TrafficStats
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -30,19 +31,50 @@ import com.example.networkanalyser.data.util.uploadAnomalyToFirebase
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
-
 import com.example.networkanalyser.presentation.graphs.*
+import com.example.networkanalyser.utils.NotificationHelper
+import com.example.networkanalyser.data.local.*
+
+import android.app.Activity
+import android.os.Build
+import androidx.core.app.ActivityCompat
 
 sealed class Screen {
     object Dashboard : Screen()
     object Graphs : Screen()
 }
 
+@Composable
+fun RequestNotificationPermissionIfNeeded() {
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // API 33+
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                if (context is Activity) {
+                    ActivityCompat.requestPermissions(
+                        context,
+                        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                        1001
+                    )
+                }
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.createNotificationChannel(this)
+
         setContent {
             NetworkAnalyserTheme {
+                RequestNotificationPermissionIfNeeded()
                 AppNavigator()
             }
         }
@@ -72,7 +104,6 @@ fun AppNavigator() {
         }
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen() {
@@ -80,11 +111,12 @@ fun DashboardScreen() {
     var connectionInfo by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(false) }
-    var showLegend by remember { mutableStateOf(false) }
 
     val dao = remember { DatabaseProvider.getDatabase(context).networkLogDao() }
     var previousLog by remember { mutableStateOf<NetworkLog?>(null) }
     val logs by dao.getAllLogs().collectAsState(initial = emptyList())
+
+    var showLegend by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         connectionInfo = getNetworkStatus(context)
@@ -94,8 +126,19 @@ fun DashboardScreen() {
         while (isScanning) {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            val scanResult = if (hasPermission) wm.scanResults.find { it.BSSID == wm.connectionInfo.bssid } else null
+
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val scanResult: ScanResult? = try {
+                if (hasPermission) {
+                    wm.scanResults.find { it.BSSID == wm.connectionInfo.bssid }
+                } else null
+            } catch (e: SecurityException) {
+                null
+            }
+
             val network = cm.activeNetwork
             val capabilities = cm.getNetworkCapabilities(network)
 
@@ -106,13 +149,18 @@ fun DashboardScreen() {
             val rx = TrafficStats.getTotalRxBytes() / (1024 * 1024)
 
             val capabilitiesString = scanResult?.capabilities.orEmpty()
-            val isSecure = capabilitiesString.contains("WPA") || capabilitiesString.contains("RSN") || capabilitiesString.contains("EAP")
+            val isSecure = capabilitiesString.contains("WPA") ||
+                    capabilitiesString.contains("WPA2") ||
+                    capabilitiesString.contains("WPA3") ||
+                    capabilitiesString.contains("RSN") ||
+                    capabilitiesString.contains("EAP")
 
-            val connectionType = when {
-                isWifi && !isSecure -> "Unsecured WiFi"
-                isWifi -> "WiFi"
-                isMobile -> "Mobile"
-                else -> "None"
+            val connectionType = if (isWifi) {
+                if (isSecure) "WiFi" else "Unsecured WiFi"
+            } else if (isMobile) {
+                "Mobile"
+            } else {
+                "None"
             }
 
             val currentLog = NetworkLog(
@@ -122,6 +170,7 @@ fun DashboardScreen() {
                 dataSentMB = tx,
                 dataReceivedMB = rx
             )
+
             val result = AnomalyDetector.detect(currentLog, previousLog)
             val finalLog = currentLog.copy(isAnomaly = result.isAnomaly)
 
@@ -129,6 +178,11 @@ fun DashboardScreen() {
 
             if (result.isAnomaly && AppConfig.uploadAnomaliesToFirebase) {
                 uploadAnomalyToFirebase(context, finalLog, result)
+                NotificationHelper.showAnomalyNotification(
+                    context = context,
+                    message = "Unusual network behavior at ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(currentLog.timestamp))}"
+                )
+
             }
 
             previousLog = finalLog
@@ -138,22 +192,29 @@ fun DashboardScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("\uD83D\uDCE1 Network Analyser") }, actions = {
-                IconButton(onClick = { showLegend = true }) {
-                    Text("ℹ️")
+            TopAppBar(
+                title = { Text("\uD83D\uDCE1 Network Analyser") },
+                actions = {
+                    IconButton(onClick = { showLegend = true }) {
+                        Text("ℹ️")
+                    }
                 }
-            })
+            )
         }
-    ) { padding ->
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize(),
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+                .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (isLoading) {
                 CircularProgressIndicator()
             } else {
-                Text("Current Network Status:", style = MaterialTheme.typography.titleMedium)
-                Text(connectionInfo)
+                Text(text = "Current Network Status:", style = MaterialTheme.typography.titleMedium)
+                Text(text = connectionInfo)
+
                 Button(onClick = {
                     isLoading = true
                     connectionInfo = getNetworkStatus(context)
@@ -161,20 +222,38 @@ fun DashboardScreen() {
                 }) {
                     Text("Refresh Info")
                 }
-                Spacer(Modifier.height(16.dp))
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 if (isScanning) {
-                    Button(onClick = { isScanning = false }) { Text("🛑 Stop Scan") }
+                    Button(onClick = { isScanning = false }) {
+                        Text("🛑 Stop Scan")
+                    }
                 } else {
-                    Button(onClick = { isScanning = true }) { Text("▶ Start Scan") }
+                    Button(onClick = { isScanning = true }) {
+                        Text("▶ Start Scan")
+                    }
                 }
+
                 Divider()
-                Text("📋 Logs:", style = MaterialTheme.typography.titleMedium)
+
+                Text(text = "\uD83D\uDD27 Coming Next:", style = MaterialTheme.typography.titleMedium)
+                Text("• Threat Detection")
+                Text("• Traffic Logging & Graphs")
+                Text("• Nearby Device Alerts")
+
+                Divider()
+
+                Text(text = "\uD83D\uDCCB Logs:", style = MaterialTheme.typography.titleMedium)
+
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(logs.takeLast(10)) { log ->
-                        Card {
+                    items(logs.take(10)) { log ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(8.dp)) {
                                 Text("Time: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(log.timestamp))}")
                                 Text("Type: ${log.connectionType}")
@@ -196,19 +275,18 @@ fun DashboardScreen() {
             onDismissRequest = { showLegend = false },
             title = { Text("Connection Type Legend") },
             text = {
-                Text(
-                    "• WiFi: Secure WiFi (WPA/WPA2/WPA3/EAP)\n" +
-                            "• Unsecured WiFi: Open or WEP networks\n" +
-                            "• Mobile: 4G/5G cellular networks"
-                )
+                Text("\u2022 WiFi: Secure WiFi connection (WPA/WPA2/WPA3/Enterprise)\n\n" +
+                        "\u2022 Unsecured WiFi: Open, WEP, or poorly configured WiFi\n\n" +
+                        "\u2022 Mobile: Mobile data connection (4G/5G)")
             },
             confirmButton = {
-                Button(onClick = { showLegend = false }) { Text("OK") }
+                Button(onClick = { showLegend = false }) {
+                    Text("OK")
+                }
             }
         )
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GraphsScreen() {
@@ -290,4 +368,3 @@ fun getNetworkStatus(context: Context): String {
         appendLine("Data Received: $rx MB")
     }
 }
-
