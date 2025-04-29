@@ -32,18 +32,10 @@ AndroidNetworkAnalyser is a Kotlin-based Android application designed to monitor
 
 ---
 
-## 📷 Screenshots
-
-> Add actual screenshots in your repo `/screenshots` and reference them here.
-
-| Dashboard | Graphs | Alerts |
-|----------|--------|--------|
-| ![](screenshots/dashboard.png) | ![](screenshots/graphs.png) | ![](screenshots/alerts.png) |
-
----
 
 ## 📦 Installation
 
 1. Clone the repository  
    ```bash
    git clone https://github.com/csavva2809/AndroidNetworkAnalyser.git
+   ```
