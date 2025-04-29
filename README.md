@@ -31,8 +31,36 @@ AndroidNetworkAnalyser is a Kotlin-based Android application designed to monitor
 | Permissions | AndroidX ActivityCompat & Permission Helpers |
 
 ---
+## Project Structure and Layout
 
-
+com
+└── example
+    └── networkanalyser
+        ├── data
+        │   ├── local
+        │   │   ├── AppDatabase.kt
+        │   │   ├── DatabaseProvider.kt
+        │   │   └── NetworkLogDao.kt
+        │   ├── model
+        │   │   └── NetworkLog.kt
+        │   └── util
+        │       └── AnomalyUploader.kt
+        ├── presentation
+        │   ├── graphs
+        │   │   ├── AnomalyHighlightGraphMP.kt
+        │   │   ├── DataSentReceivedGraphMP.kt
+        │   │   └── SignalStrengthGraphMP.kt
+        │   └── main
+        │       ├── MainActivity.kt
+        │       ├── LoginActivity.kt
+        │       └── RegisterActivity.kt
+        └── utils
+            ├── AnomalyDetector.kt
+            ├── AppConfig.kt
+            ├── NearbyAlertManager.kt
+            ├── NotificationHelper.kt
+            └── PermissionHelper.kt
+---
 ## 📦 Installation
 
 1. Clone the repository  
