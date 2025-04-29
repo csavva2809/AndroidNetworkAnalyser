@@ -33,14 +33,14 @@ AndroidNetworkAnalyser is a Kotlin-based Android application designed to monitor
 ---
 ## Project Structure and Layout
 
-com
-└── example
-    └── networkanalyser
-        ├── data
-        │   ├── local
-        │   │   ├── AppDatabase.kt
-        │   │   ├── DatabaseProvider.kt
-        │   │   └── NetworkLogDao.kt
+com  
+└── example  
+    └── networkanalyser  
+        ├── data  
+        │   ├── local  
+        │   │   ├── AppDatabase.kt  
+        │   │   ├── DatabaseProvider.kt  
+        │   │   └── NetworkLogDao.kt  
         │   ├── model
         │   │   └── NetworkLog.kt
         │   └── util
